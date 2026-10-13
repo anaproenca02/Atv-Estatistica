@@ -1,0 +1,313 @@
+---
+title: "Atividade em Grupo 1 - Grupo 1"
+author: "Ricardo"
+date: "2026-09-29"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+options(encoding = "UTF-8")
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "90%"
+)
+options(scipen = 9999)
+```
+
+## Objetivo da análise
+
+Quais características estão associadas ao índice de desempenho dos
+funcionários e como prevê-lo?
+
+## Amostra geral
+
+```{r leitura_dados, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(knitr)
+library(corrplot)
+
+# Troque o setwd() abaixo pelo seu setwd() obtido com CTRL+SHIFT+H
+setwd("C:/Users/ricardo.matteo/OneDrive - ESPM/Área de Trabalho/codes/R/EstatMulti")
+
+dados = read_excel("base_01_people_analytics.xlsx")
+```
+
+**Dados disponíveis:** informações do último ano de 5.000 funcionários
+com mais de 12 meses de casa de uma empresa de serviços. Na Parte 1 não
+utilizamos a variável promovido.
+
+```{r config_variaveis}
+variavel_id = "id_funcionario"
+variavel_resposta = "indice_desempenho"
+
+variaveis_quanti = c(
+  "horas_projetos_mes", "horas_reunioes_mes", "horas_trabalhadas_mes",
+  "horas_treinamento_ano", "cursos_concluidos_ano", "metas_atingidas_pct",
+  "tempo_empresa_anos", "distancia_trabalho_km"
+)
+
+variaveis_quali = c(
+  "trabalho_hibrido", "pos_graduacao", "area", "unidade", "nivel_cargo"
+)
+```
+
+## Criação das dummies
+
+Como categorias de referência, utilizaremos: Nao, Nao, Operacoes, Matriz
+e Junior para trabalho híbrido, pós-graduação, área, unidade e nível do
+cargo, respectivamente.
+
+```{r dummies}
+categorias_referencia = c(
+  trabalho_hibrido = "Nao",
+  pos_graduacao = "Nao",
+  area = "Operacoes",
+  unidade = "Matriz",
+  nivel_cargo = "Junior"
+)
+
+dados = dados %>%
+  select(-promovido) %>%
+  mutate(
+    across(
+      all_of(variaveis_quali),
+      ~ relevel(
+        factor(.x),
+        ref = categorias_referencia[[cur_column()]]
+      )
+    )
+  )
+```
+
+# PARTE 1
+
+## a) Análise descritiva
+
+### Variável resposta
+
+```{r resumo_resposta}
+tabela_resumo = dados %>%
+  summarise(
+    Minimo = min(.data[[variavel_resposta]]),
+    Q1 = quantile(.data[[variavel_resposta]], 0.25),
+    Mediana = median(.data[[variavel_resposta]]),
+    Media = mean(.data[[variavel_resposta]]),
+    Q3 = quantile(.data[[variavel_resposta]], 0.75),
+    Maximo = max(.data[[variavel_resposta]]),
+    Desvio_padrao = sd(.data[[variavel_resposta]])
+  )
+
+kable(
+  tabela_resumo,
+  digits = 2,
+  caption = "Medidas resumo do índice de desempenho"
+)
+```
+
+O índice de desempenho tem média de 71,84 pontos e desvio-padrão de
+8,62, variando de 38,4 a 98,8. Média e mediana (72,0) são praticamente
+iguais, indicando uma distribuição simétrica.
+
+### Gráficos de dispersão para as variáveis quantitativas
+
+```{r dispersao, fig.height=8}
+dados_disp_grafico = dados %>%
+  select(all_of(c(variavel_resposta, variaveis_quanti))) %>%
+  pivot_longer(
+    cols = all_of(variaveis_quanti),
+    names_to = "Variavel",
+    values_to = "Valor"
+  )
+
+ggplot(dados_disp_grafico,
+       aes(x = Valor, y = .data[[variavel_resposta]])) +
+  geom_point(alpha = 0.15, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(~ Variavel, scales = "free_x", ncol = 2) +
+  labs(y = "Índice de desempenho", x = NULL) +
+  theme_minimal()
+```
+
+```{r correl_resposta}
+tabela_correl_resposta = tibble(
+  Variavel = variaveis_quanti,
+  Correlacao = sapply(
+    variaveis_quanti,
+    function(v) cor(dados[[v]], dados[[variavel_resposta]])
+  )
+) %>%
+  arrange(desc(abs(Correlacao)))
+
+kable(
+  tabela_correl_resposta,
+  digits = 3,
+  caption = "Correlação de cada variável quantitativa com o índice de desempenho"
+)
+```
+
+Considerando as variáveis quantitativas, parece que:
+
+-   horas dedicadas a projetos (r = 0,45) é a variável com maior
+    associação positiva com o desempenho: quem dedica mais horas a
+    projetos tende a ter índice de desempenho maior;
+
+-   horas em reuniões (r = -0,42) tem associação negativa de intensidade
+    parecida: quem passa mais horas em reuniões tende a ter desempenho
+    menor;
+
+-   horas de treinamento (r = 0,33) e cursos concluídos (r = 0,31) têm
+    associação positiva moderada com o desempenho, e os dois gráficos
+    são muito parecidos entre si;
+
+-   metas atingidas (r = 0,25) tem associação positiva fraca e distância
+    até o trabalho (r = -0,23) tem associação negativa fraca (quem mora
+    mais longe tende a ter desempenho um pouco menor);
+
+-   horas trabalhadas (r = 0,05) e tempo de empresa (r = 0,00)
+    praticamente não se relacionam com o desempenho (retas quase
+    horizontais). No caso das horas trabalhadas, isso faz sentido, pois
+    elas somam horas de projetos (efeito positivo) e de reuniões (efeito
+    negativo), que se compensam.
+
+Em todos os gráficos a dispersão em torno da reta é grande, ou seja,
+nenhuma variável sozinha explica bem o desempenho, e não aparecem
+padrões claramente não lineares.
+
+### Boxplots para as variáveis qualitativas
+
+```{r boxplots, fig.height=7}
+dados_quali_grafico = dados %>%
+  select(all_of(c(variavel_resposta, variaveis_quali))) %>%
+  pivot_longer(
+    cols = all_of(variaveis_quali),
+    names_to = "Variavel",
+    values_to = "Categoria"
+  )
+
+ggplot(dados_quali_grafico,
+       aes(x = Categoria, y = .data[[variavel_resposta]],
+           fill = Categoria)) +
+  geom_boxplot(show.legend = FALSE) +
+  stat_summary(fun = mean, geom = "point", shape = 4, size = 2) +
+  facet_wrap(~ Variavel, scales = "free_x", ncol = 2) +
+  labs(y = "Índice de desempenho", x = NULL) +
+  theme_minimal()
+```
+
+```{r medias_quali}
+tabela_medias = dados_quali_grafico %>%
+  group_by(Variavel, Categoria) %>%
+  summarise(
+    Frequencia = n(),
+    Media = mean(.data[[variavel_resposta]]),
+    Mediana = median(.data[[variavel_resposta]]),
+    Desvio_padrao = sd(.data[[variavel_resposta]]),
+    .groups = "drop"
+  )
+
+kable(
+  tabela_medias,
+  digits = 2,
+  caption = "Índice de desempenho por categoria das variáveis qualitativas"
+)
+```
+
+Já considerando as variáveis qualitativas, parece que:
+
+-   quem está no regime híbrido tem desempenho médio maior (73,23) do
+    que quem não está (70,91);
+
+-   a área de Tecnologia se destaca (74,18), enquanto Comercial (71,14)
+    e Operações (71,01) são praticamente iguais;
+
+-   a unidade diferencia o desempenho: FilialSul tem a maior média
+    (73,75), seguida da Matriz (72,18) e da FilialNorte (69,96);
+
+-   ter ou não pós-graduação não parece diferenciar o desempenho (71,63
+    com e 71,96 sem);
+
+-   o nível do cargo também não parece diferenciar: Junior (71,45),
+    Pleno (71,92) e Senior (72,04) têm médias muito próximas.
+
+Em todas as variáveis as caixas se sobrepõem bastante e a variabilidade
+é parecida entre as categorias; as diferenças são deslocamentos de, no
+máximo, 2 a 4 pontos na média.
+
+## b) Mapa e matriz de correlações
+
+```{r correl_grafico, fig.height=6}
+dados_correl = dados %>%
+  dplyr::select(
+    all_of(variaveis_quanti)
+  )
+
+matriz_correl = cor(
+  dados_correl,
+  use = "pairwise.complete.obs"
+)
+
+corrplot(
+  matriz_correl,
+  method = "color",
+  type = "upper",
+  order = "hclust",
+  addCoef.col = "black",
+  number.cex = 0.7,
+  diag = FALSE,
+  tl.col = "black",
+  tl.cex = 0.8,
+  tl.srt = 45
+)
+```
+
+```{r correl_matriz}
+tabela_correlacoes = as.data.frame(as.table(matriz_correl)) %>%
+  rename(
+    Variavel_1 = Var1,
+    Variavel_2 = Var2,
+    Correlacao = Freq
+  ) %>%
+  filter(
+    as.integer(Variavel_1) < as.integer(Variavel_2)
+  ) %>%
+  arrange(desc(abs(Correlacao)))
+
+kable(
+  tabela_correlacoes,
+  digits = 3,
+  caption = "Correlações entre os pares de variáveis quantitativas"
+)
+```
+
+A maioria dos pares de variáveis explicativas tem correlação
+praticamente nula (em módulo, menor que 0,05), mas três pares se
+destacam:
+
+-   horas de treinamento e cursos concluídos (r = 0,917): correlação
+    muito forte, quem conclui mais cursos acumula mais horas de
+    treinamento, ou seja, as duas variáveis carregam praticamente a
+    mesma informação;
+
+-   horas em projetos e horas trabalhadas (r = 0,717);
+
+-   horas em reuniões e horas trabalhadas (r = 0,631).
+
+Os dois últimos pares mostram que as horas trabalhadas funcionam,
+praticamente, como a soma das horas em projetos e das horas em
+reuniões. Assim, mesmo que cada correlação isolada não seja extrema, as
+horas trabalhadas são quase uma combinação das outras duas.
+
+Portanto, as possíveis candidatas a multicolinearidade são:
+horas_treinamento_ano e cursos_concluidos_ano, e o trio
+horas_trabalhadas_mes, horas_projetos_mes e horas_reunioes_mes. Isso
+será confirmado pelo VIF no item c). Metas atingidas, tempo de empresa e
+distância até o trabalho não apresentam correlação relevante com
+nenhuma outra variável explicativa.
