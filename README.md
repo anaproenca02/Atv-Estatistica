@@ -1,2 +1,0 @@
-# Atv-Estatistica
-Estatistica Multivariada
